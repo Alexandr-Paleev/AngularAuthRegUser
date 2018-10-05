@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>My test page</title>
+  </head>
+  <body>
+    <script>
+            
+    angular.module('Auth', [
+    'firebase'
+])
+
+.service('AuthService', [  '$rootScope','$firebase', '$firebaseAuth', '$location', '$q',
+function AuthService( $rootScope, $firebase, $firebaseAuth, $location, $q ){
+    var firebaseObj = new Firebase('https://your-firebase-app.com/');
+    var userStorageKey = 'authUser';
+    var authUser = $.jStorage.get(userStorageKey) || { status:false, data: false };
+
+    return {
+      //создает нового пользователя используя email
+        createUserByEmail: function(email, password){
+            var deferred = $q.defer();
+            firebaseObj.createUser({
+                email    : email,
+                password : password
+            }, function(error) {
+                if (error === null) {
+                    deferred.resolve({
+                        status: true
+                    });
+                } else {
+                    deferred.resolve({
+                        status: false,
+                        error: error
+                    });
+                }
+            });
+
+            return deferred.promise;
+        },
+        //авторизация пользователя по email
+        signInUserByEmail: function(email, password){
+            var deferred = $q.defer();
+            firebaseObj.authWithPassword({
+                email    : email,
+                password : password
+            }, function(error, data) {
+                if (error === null) {                    
+                    authUser = {
+                        status: true,
+                        data: data
+                    };
+                    deferred.resolve(authUser);
+                    $.jStorage.set(userStorageKey, authUser);
+                } else {
+                    deferred.resolve({
+                        status: false,
+                        error: error
+                    });
+                }
+            });
+
+            return deferred.promise;
+        },
+        //функция для изменения пароля
+        changeUserPass: function(email, password, newPassword){
+            firebaseObj.changePassword({
+                email       : email,
+                oldPassword : password,
+                newPassword : newPassword
+            }, function(error) {
+                if (error === null) {
+                    console.log("Password changed successfully");
+                } else {
+                    console.log("Error changing password:", error);
+                }
+            });
+        },
+        //тоже функция для изменения пароля, но отличается тем, что старый пароль будет сброшен, а новый придет пользователю на почту
+        resetAndSendPassword: function(email){
+            firebaseObj.resetPassword({
+                email : email
+            }, function(error) {
+                if (error === null) {
+                    console.log("Password reset email sent successfully");
+                } else {
+                    console.log("Error sending password reset email:", error);
+                }
+            });
+        },
+        //удаление пользователя
+        deleteUser: function(email, password){
+            firebaseObj.removeUser({
+                email    : email,
+                password : password
+            }, function(error) {
+                if (error === null) {
+                    console.log("User removed successfully");
+                } else {
+                    console.log("Error removing user:", error);
+                }
+            });
+        },
+        //функция проверяющая авторизован пользователь или нет и возвращает его состояние
+        getUserState:function(){            
+            console.info(authUser);
+            if(authUser.data){
+                var data = firebaseObj.getAuth();
+                authUser = {
+                    status: data ? true : false,
+                    data: (data == null) ? {} : data
+                };
+                $.jStorage.set(userStorageKey, authUser);
+            }
+            return authUser.status;
+        },
+        //это логаут :)
+        logOut: function(){
+            $firebaseAuth(firebaseObj).$unauth();
+            $.jStorage.deleteKey(userStorageKey);
+            $rootScope.$userState = this.getUserState();
+        },
+        //возвращает данные авторизованного пользователя
+        getAuthUser: function(){
+            return authUser.data;
+        }
+    };
+}])
+
+//авторизация пользователя
+.directive('signInForm', [ '$rootScope', 'AuthService', '$location', function( $rootScope, AuthService, $location){
+    return{
+        restrict: 'A',
+        templateUrl: 'auth/templates/sign-in.tpl.html',
+        link: function(scope, element, attrs){
+            scope.userEmail = '';
+            scope.userPassword = '';
+            scope.userState = AuthService.getUserState();
+
+            scope.signInUserByEmail = function(){
+                AuthService.signInUserByEmail(scope.userEmail, scope.userPassword)
+                .then(function(response){
+                    scope.userState = AuthService.getUserState();
+                    if(scope.userState) {
+                        alert('You are logged in');
+                        $location.path('profile');
+                    }
+                    else{
+                        alert('Incorrect user email or password');
+                    }
+                });
+            };
+        }
+    };
+}])
+
+//регистрации пользователя
+.directive('signUpForm', [ '$rootScope', 'AuthService', '$location', function( $rootScope, AuthService, $location){
+    return{
+        restrict: 'A',
+        templateUrl: 'auth/templates/sign-up.tpl.html',
+        link: function(scope, element, attrs){
+            scope.userEmail = '';
+            scope.userPassword = '';
+            scope.facebookEnabled = false;
+            scope.userState = AuthService.getUserState();
+            scope.isRegistered = false;
+
+            scope.createUser = function(){
+                AuthService.createUserByEmail(scope.userEmail, scope.userPassword)
+                .then(function(response){
+                    if(response.status){
+                        alert("Congratulations! You've successfully signed up. You can authorize");
+                        scope.isRegistered = true;
+                    }
+                    else{
+                        alert(response.error);
+                    }
+                });
+            };
+        }
+    };
+}])
+;
+
+    </script>
+  </body>
+</html>
